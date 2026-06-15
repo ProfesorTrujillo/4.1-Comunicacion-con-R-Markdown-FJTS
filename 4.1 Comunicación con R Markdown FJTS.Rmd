@@ -1,0 +1,480 @@
+---
+title: "Análisis Exploratorio de Datos de Llamadas al 911 en la Ciudad de México"
+author: "Francisco Javier Trujillo Silva"
+date: "miércoles 10 de junio de 2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE,
+ warning = FALSE,
+ message = FALSE
+)
+
+library(tidyverse)
+library(lubridate)
+library(plotly)
+library(leaflet)
+library(DT)
+library(janitor)
+library(knitr)
+```
+
+# Portada
+
+<center>
+
+# Análisis Exploratorio de Datos
+
+## Sistema de Emergencias 911 CDMX
+
+![](img/portada.png)
+
+**Ciudad de México**
+
+**Reporte Analítico**
+
+</center>
+
+---
+
+# 1. Introducción
+
+## Objetivo
+
+El presente estudio tiene como finalidad analizar el comportamiento de las llamadas registradas en el sistema de emergencias 911 de la Ciudad de México.
+
+Mediante técnicas de análisis exploratorio de datos (EDA) se busca identificar patrones temporales, espaciales y operativos relacionados con los reportes ciudadanos.
+
+### Preguntas de investigación
+
+- ¿Cuántas llamadas se registran?
+- ¿Cuáles son las alcaldías con mayor incidencia?
+- ¿En qué horarios ocurren más reportes?
+- ¿Qué categorías son las más frecuentes?
+- ¿Cuál es el tiempo promedio de atención?
+- ¿Cómo se distribuyen geográficamente los eventos?
+
+---
+
+# 2. Carga de librerías
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(plotly)
+library(leaflet)
+library(DT)
+library(janitor)
+```
+
+---
+
+# 3. Carga de datos
+
+```{r}
+datos <- read_csv(
+  "datos/llamadas_911_2022_s1.csv"
+) %>%
+  clean_names()
+```
+
+---
+
+# 4. Exploración inicial
+
+## Estructura del conjunto de datos
+
+```{r}
+glimpse(datos)
+```
+
+### Dimensiones
+
+```{r}
+dim(datos)
+```
+
+### Primeros registros
+
+```{r}
+head(datos)
+```
+
+### Tabla interactiva
+
+```{r}
+datatable(
+ head(datos,20),
+ options = list(pageLength = 5)
+)
+```
+
+---
+
+# 5. Descripción de variables
+
+```{r}
+names(datos)
+```
+
+El conjunto contiene información relacionada con:
+
+- Fecha de creación del reporte.
+- Hora de creación.
+- Fecha de cierre.
+- Hora de cierre.
+- Categoría del incidente.
+- Alcaldía de atención.
+- Coordenadas geográficas.
+- Estado operativo del evento.
+
+---
+
+# 6. Limpieza y preparación de datos
+
+## Conversión de fechas
+
+```{r}
+datos <- datos %>%
+ mutate(
+   fecha_inicio = ymd_hms(
+     paste(
+       fecha_creacion,
+       hora_creacion
+     )
+   ),
+
+   fecha_fin = ymd_hms(
+     paste(
+       fecha_cierre,
+       hora_cierre
+     )
+   ),
+
+   hora = hour(fecha_inicio),
+
+   tiempo_respuesta =
+     as.numeric(
+       difftime(
+         fecha_fin,
+         fecha_inicio,
+         units = "mins"
+       )
+     )
+ )
+```
+
+---
+
+# 7. Calidad de los datos
+
+## Valores faltantes
+
+```{r}
+faltantes <- datos %>%
+ summarise(
+   across(
+     everything(),
+     ~sum(is.na(.))
+   )
+ )
+
+faltantes
+```
+
+
+# Valores faltantes por variable
+
+faltantes_long <- datos %>%
+  summarise(
+    across(
+      everything(),
+      ~sum(is.na(.))
+    )
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Cantidad"
+  )
+
+ggplot(
+  faltantes_long,
+  aes(
+    x = reorder(Variable, Cantidad),
+    y = Cantidad
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Valores faltantes por variable",
+    x = "Variable",
+    y = "Cantidad"
+  ) +
+  theme_minimal()
+
+
+### Interpretación
+
+Los valores faltantes permiten evaluar la calidad de la información disponible para el análisis.
+
+---
+
+# 8. Estadísticas descriptivas
+
+## Resumen general
+
+```{r}
+summary(datos$tiempo_respuesta)
+```
+
+## Indicadores principales
+
+```{r}
+datos %>%
+ summarise(
+   Total_Llamadas = n(),
+   Tiempo_Promedio = mean(
+     tiempo_respuesta,
+     na.rm = TRUE
+   ),
+   Tiempo_Maximo = max(
+     tiempo_respuesta,
+     na.rm = TRUE
+   ),
+   Tiempo_Minimo = min(
+     tiempo_respuesta,
+     na.rm = TRUE
+   )
+ )
+```
+
+---
+
+# 9. Distribución temporal
+
+## Llamadas por hora
+
+```{r}
+llamadas_hora <- datos %>%
+ count(hora)
+
+ggplot(
+ llamadas_hora,
+ aes(hora,n)
+)+
+ geom_line()+
+ geom_point()+
+ labs(
+   title = "Distribución de llamadas por hora",
+   x = "Hora",
+   y = "Número de llamadas"
+ )
+```
+
+### Interpretación
+
+La gráfica permite identificar las horas de mayor demanda del servicio de emergencias.
+
+---
+
+# 10. Categorías de incidentes
+
+```{r}
+categorias <- datos %>%
+ count(clas_con_f_alarma)
+
+plot_ly(
+ categorias,
+ labels = ~clas_con_f_alarma,
+ values = ~n,
+ type = "pie"
+)
+```
+
+### Interpretación
+
+Se observan las categorías que generan la mayor cantidad de reportes dentro del sistema.
+
+---
+
+# 11. Top 10 alcaldías con más incidentes
+
+```{r}
+top_alcaldias <- datos %>%
+ count(alcaldia_cierre) %>%
+ arrange(desc(n)) %>%
+ slice(1:10)
+
+ggplot(
+ top_alcaldias,
+ aes(
+   reorder(alcaldia_cierre,n),
+   n
+ )
+)+
+ geom_col()+
+ coord_flip()+
+ labs(
+   title = "Top 10 Alcaldías con más incidentes",
+   x = "Alcaldía",
+   y = "Total"
+ )
+```
+
+---
+
+# Distribución territorial
+
+![](img/dashboard3.jpg)
+
+---
+
+# 12. Tiempo de atención
+
+## Histograma
+
+```{r}
+ggplot(
+ datos,
+ aes(tiempo_respuesta)
+)+
+ geom_histogram(
+   bins = 30
+ )+
+ labs(
+   title = "Distribución del tiempo de atención",
+   x = "Minutos",
+   y = "Frecuencia"
+ )
+```
+
+### Interpretación
+
+Permite identificar tiempos típicos de respuesta y posibles valores atípicos.
+
+---
+
+# 13. Análisis geoespacial
+
+```{r}
+mapa <- datos %>%
+ filter(
+   !is.na(latitud),
+   !is.na(longitud)
+ )
+
+leaflet(mapa) %>%
+ addTiles() %>%
+ addCircleMarkers(
+   lng = ~longitud,
+   lat = ~latitud,
+   radius = 2,
+   popup = ~alcaldia_cierre
+ )
+```
+
+### Interpretación
+
+La concentración de puntos permite visualizar zonas con mayor actividad de emergencias.
+
+---
+
+# 14. Dashboard desarrollado en Shiny
+
+![](img/dashboard1.jpg)
+
+La aplicación Shiny permite realizar consultas dinámicas sobre:
+
+- Indicadores KPI.
+- Tendencias horarias.
+- Categorías de eventos.
+- Alcaldías.
+- Mapa interactivo.
+- Insights automáticos.
+
+---
+
+# 15. Insights automáticos
+
+```{r}
+top_alcaldia <- datos %>%
+ count(alcaldia_cierre) %>%
+ arrange(desc(n)) %>%
+ slice(1)
+
+hora_pico <- datos %>%
+ count(hora) %>%
+ arrange(desc(n)) %>%
+ slice(1)
+
+tiempo_promedio <- round(
+ mean(
+   datos$tiempo_respuesta,
+   na.rm = TRUE
+ ),
+ 2
+)
+```
+
+## Resultados principales
+
+```{r}
+cat(
+ "Alcaldía con más incidentes:",
+ top_alcaldia$alcaldia_cierre,
+
+ "\n\nHora pico:",
+ hora_pico$hora,
+
+ "\n\nTiempo promedio:",
+ tiempo_promedio,
+ "minutos"
+)
+```
+
+---
+
+# 16. Conclusiones
+
+## Hallazgos principales
+
+1. Se identificó una concentración importante de llamadas en determinadas horas del día.
+
+2. Existen alcaldías que generan una proporción considerablemente mayor de reportes.
+
+3. Las categorías de incidentes muestran patrones de ocurrencia diferenciados.
+
+4. El análisis geoespacial evidencia zonas con alta demanda de atención.
+
+5. El tiempo de atención constituye un indicador relevante para evaluar el desempeño operativo.
+
+---
+
+# 17. Recomendaciones
+
+- Fortalecer recursos durante las horas pico.
+- Analizar las causas de las categorías más frecuentes.
+- Priorizar alcaldías con mayor volumen de incidentes.
+- Monitorear continuamente los tiempos de respuesta.
+- Incorporar modelos predictivos para anticipar la demanda.
+
+---
+
+# Referencias
+
+- Datos abiertos del Sistema de Emergencias 911.
+- RStudio.
+- Tidyverse.
+- Plotly.
+- Leaflet.
+- Shiny.
